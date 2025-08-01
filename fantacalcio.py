@@ -1,0 +1,68 @@
+import pandas as pd
+
+def calcola_valore_portiere(row):
+    return (
+        row["Mv"] * row["Pv"]+
+        row["Rp"] * 3 -
+        row["Gs"] * 1 -
+        row["Amm"] * 0.5 -
+        row["Esp"] * 2 -
+        row["Au"] * 3
+    ) * get_quotazione(row["Id"]) /1000
+
+def calcola_valore_mov(row):
+    return (
+        row["Mv"] * row["Pv"]+
+        (row["Gf"] - row["R-"])* 3 -
+        row["Amm"] * 0.5 -
+        row["Esp"] * 2 -
+        row["Au"] * 3 +
+        row["Ass"] * 1
+    ) * get_quotazione(row["Id"]) /1000
+
+def get_giocatori(per_ruolo):
+    df = pd.read_excel("Statistiche_Fantacalcio_Stagione_2024_25.XLSX", header=1)
+
+    # Filtra i ruoli ufficiali se specificato
+    if per_ruolo:
+        df = df[df["R"] == per_ruolo]
+
+    # Calcola valore solo per portieri (R == "P")
+    if per_ruolo == "P":
+        df["Valore"] = df.apply(calcola_valore_portiere, axis=1)
+    else:
+        df["Valore"] = df.apply(calcola_valore_mov, axis=1)
+
+    return df
+
+def get_quotazione(player_id):
+    quotazioni = pd.read_excel("Quotazioni_Fantacalcio_Stagione_2024_25.xlsx", header=1)
+    
+    # Filtra per ID
+    riga = quotazioni[quotazioni["Id"] == player_id]
+
+    if not riga.empty:
+        return riga.iloc[0]["FVM"]
+    else:
+        return 1
+    
+def normalizza_valori(df, minimo, massimo):
+    min_val = df["Valore"].min()
+    max_val = df["Valore"].max()
+    df["Valore" + "_norm"] = ((df["Valore"] - min_val) / (max_val - min_val)) * (massimo - minimo) + minimo
+    return df
+
+
+# Esegui e mostra
+#portieri = get_giocatori("P")
+#portieri = normalizza_valori(portieri, 1, 100)
+difensori = get_giocatori("D")
+difensori = normalizza_valori(difensori, 1, 110)
+centrocampisti = get_giocatori("C")
+centrocampisti = normalizza_valori(centrocampisti, 1, 130)
+#attaccanti = get_giocatori("A")
+#attaccanti = normalizza_valori(attaccanti, 1, 400)
+#print(portieri[["Nome", "R", "Mv", "Rp", "Gs", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore_norm", ascending=False).head(20))
+print(difensori[["Nome", "R", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore", ascending=False).head(30))
+print(centrocampisti[["Nome", "R", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore", ascending=False).head(30))
+#print(attaccanti[["Nome", "R", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore", ascending=False).head(20))
