@@ -2,6 +2,45 @@ import tkinter as tk
 from tkinter import ttk
 import pandas as pd
 from toolAsta import avvia_tool
+import os
+
+CACHE_FILE = "giocatori_elaborati.xlsx"
+
+def prepara_cache():
+    if os.path.exists(CACHE_FILE):
+        print("🟢 Cache trovata, caricamento rapido.")
+        df = pd.read_excel(CACHE_FILE, sheet_name=None)
+        return (
+            df["Portieri"],
+            df["Difensori"],
+            df["Centrocampisti"],
+            df["Attaccanti"]
+        )
+    else:
+        print("⚠️ Nessuna cache trovata, calcolo in corso...")
+
+        portieri = get_giocatori("P")
+        portieri = normalizza_valori(portieri, 1, 100)
+
+        difensori = get_giocatori("D")
+        difensori = normalizza_valori(difensori, 1, 90)
+
+        centrocampisti = get_giocatori("C")
+        centrocampisti = normalizza_valori(centrocampisti, 1, 160)
+
+        attaccanti = get_giocatori("A")
+        attaccanti = normalizza_valori(attaccanti, 1, 320)
+
+        # Salva tutto in un Excel con più fogli
+        with pd.ExcelWriter(CACHE_FILE) as writer:
+            portieri.to_excel(writer, sheet_name="Portieri", index=False)
+            difensori.to_excel(writer, sheet_name="Difensori", index=False)
+            centrocampisti.to_excel(writer, sheet_name="Centrocampisti", index=False)
+            attaccanti.to_excel(writer, sheet_name="Attaccanti", index=False)
+
+        print("✅ Cache generata con successo.")
+        return portieri, difensori, centrocampisti, attaccanti
+
 
 def centra_finestra(finestra, larghezza=800, altezza=600):
     finestra.update_idletasks()
@@ -35,12 +74,11 @@ def calcola_valore_mov(row):
 def get_giocatori(per_ruolo):
     df_stat = pd.read_excel("Statistiche_Fantacalcio_Stagione_2024_25.XLSX", header=1)
     df_quot = pd.read_excel("Quotazioni_Fantacalcio_Stagione_2025_26.xlsx", header=1)
-    df = pd.merge(df_stat, df_quot[["Id", "R"]], on="Id", how="outer", suffixes=("", "_nuovo"))
-    df["R"] = df["R_nuovo"]
-
-    # Rimuovi la colonna temporanea
-    df= df.drop(columns=["R_nuovo"])
-
+    df = pd.merge(df_quot, df_stat, on="Id", how="left", suffixes=("", "_old"))
+    colonne_statistiche = ["Mv", "Pv", "Rp", "Gs", "Amm", "Esp", "Au", "Gf", "R-", "Ass", "Pc"]
+    for col in colonne_statistiche:
+        if col in df.columns:
+            df[col] = df[col].fillna(-1)
     # Filtra i ruoli ufficiali se specificato
     if per_ruolo:
         df = df[df["R"] == per_ruolo]
@@ -70,14 +108,7 @@ def normalizza_valori(df, minimo, massimo):
     df["Valore" + "_norm"] = round(((df["Valore"] - min_val) / (max_val - min_val)) * (massimo - minimo) + minimo, 2)
     return df
 
-portieri = get_giocatori("P")
-portieri = normalizza_valori(portieri, 1, 100)
-difensori = get_giocatori("D")
-difensori = normalizza_valori(difensori, 1, 90)
-centrocampisti = get_giocatori("C")
-centrocampisti = normalizza_valori(centrocampisti, 1, 160)
-attaccanti = get_giocatori("A")
-attaccanti = normalizza_valori(attaccanti, 1, 320)
+portieri, difensori, centrocampisti, attaccanti = prepara_cache()
 #print(portieri[["Nome", "R", "Mv", "Rp", "Gs", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore_norm", ascending=False).head(20))
 #print(difensori[["Nome", "R", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore", ascending=False).head(30))
 #print(centrocampisti[["Nome", "R", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore", ascending=False).head(30))
@@ -94,7 +125,7 @@ def main_menu():
 
     def apri_altro():
         root.destroy()
-        avvia_tool(main_menu, centra_finestra)
+        avvia_tool(main_menu, centra_finestra, pd.concat([portieri, difensori, centrocampisti, attaccanti]))
 
     root = tk.Tk()
     root.title("Menu Fantacalcio")
@@ -132,29 +163,29 @@ def avvia_ricerca(callback_torna_indietro):
         match scelta:
             case "p":
                 pd.set_option("display.max_rows", None)
-                mostra_risultati(portieri[["Nome","Squadra", "R", "Mv", "Rp", "Gs", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore_norm", ascending=False))
+                mostra_risultati(portieri[["Nome","Squadra", "R", "Pv", "Mv", "Rp", "Gs", "Amm", "Esp", "Au", "Valore_norm", "Pc"]].sort_values("Valore_norm", ascending=False))
             
             case "d":
                 pd.set_option("display.max_rows", None)
-                mostra_risultati(difensori[["Nome","Squadra", "R", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore_norm", ascending=False))
+                mostra_risultati(difensori[["Nome","Squadra", "R","Pv", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore_norm", "Pc"]].sort_values("Valore_norm", ascending=False))
             
             case "c":
                 pd.set_option("display.max_rows", None)
-                mostra_risultati(centrocampisti[["Nome","Squadra", "R", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore_norm", ascending=False))
+                mostra_risultati(centrocampisti[["Nome","Squadra", "R","Pv", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore_norm", "Pc"]].sort_values("Valore_norm", ascending=False))
 
             case "a":
                 pd.set_option("display.max_rows", None)
-                mostra_risultati(attaccanti[["Nome","Squadra", "R", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore_norm", ascending=False))
+                mostra_risultati(attaccanti[["Nome","Squadra", "R","Pv", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore_norm", "Pc"]].sort_values("Valore_norm", ascending=False))
 
             case "tutti":
                 mostra_risultati("Portieri:")
-                print(portieri[["Nome","Squadra", "R", "Mv", "Rp", "Gs", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore_norm", ascending=False).head(20))
+                print(portieri[["Nome","Squadra", "R","Pv", "Mv", "Rp", "Gs", "Amm", "Esp", "Au", "Valore_norm", "Pc"]].sort_values("Valore_norm", ascending=False).head(20))
                 print("\nDifensori:")
-                mostra_risultati(difensori[["Nome","Squadra", "R", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore", ascending=False).head(30))
+                mostra_risultati(difensori[["Nome","Squadra", "R", "Pv","Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore_norm", "Pc"]].sort_values("Valore", ascending=False).head(30))
                 print("\nCentrocampisti:")
-                mostra_risultati(centrocampisti[["Nome","Squadra", "R", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore", ascending=False).head(30))
+                mostra_risultati(centrocampisti[["Nome","Squadra", "R","Pv", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore_norm", "Pc"]].sort_values("Valore", ascending=False).head(30))
                 print("\nAttaccanti:")
-                mostra_risultati(attaccanti[["Nome","Squadra", "R", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore", ascending=False).head(30))
+                mostra_risultati(attaccanti[["Nome","Squadra", "R","Pv", "Mv", "Gf", "Ass", "Amm", "Esp", "Au",  "Valore_norm", "Pc"]].sort_values("Valore", ascending=False).head(30))
 
             case _:
                 all_players = pd.concat([portieri, difensori, centrocampisti, attaccanti])
@@ -162,9 +193,9 @@ def avvia_ricerca(callback_torna_indietro):
 
                 if risultati.empty:
                     risultati = all_players[all_players["Nome"].str.lower().str.contains(scelta, na=False)]
-                    mostra_risultati(risultati[["Nome","Squadra", "R", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore_norm", ascending=False))
+                    mostra_risultati(risultati[["Nome","Squadra", "R","Pv", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore_norm", "Pc"]].sort_values("Valore_norm", ascending=False))
                 else:
-                    mostra_risultati(risultati[["Nome","Squadra", "R", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore", "Valore_norm"]].sort_values("Valore_norm", ascending=False))
+                    mostra_risultati(risultati[["Nome","Squadra", "R","Pv", "Mv", "Gf", "Ass", "Amm", "Esp", "Au", "Valore_norm", "Pc"]].sort_values("Valore_norm", ascending=False))
 
 
     def mostra_risultati(risultati):
