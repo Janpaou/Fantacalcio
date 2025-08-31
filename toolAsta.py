@@ -41,6 +41,8 @@ def salva_squadre(squadre):
 
 
 def avvia_tool(callback_torna_indietro, centra_finestra, all_players):
+    note_per_id = {}
+    partecipanti_nomi, squadre = carica_file()
     popup_impostazioni = None 
     root = tk.Tk()
     root.title("Tool Asta")
@@ -54,6 +56,18 @@ def avvia_tool(callback_torna_indietro, centra_finestra, all_players):
 
     partecipante_selezionato = tk.StringVar()
     ricerca_var = tk.StringVar()
+    def carica_note():
+        nonlocal note_per_id
+        try:
+            xls = pd.ExcelFile(FILE_EXCEL)
+            if "Note" in xls.sheet_names:
+                df_note = pd.read_excel(xls, sheet_name="Note")
+                note_per_id = dict(zip(df_note["Id"], df_note["Nota"]))
+        except Exception as e:
+            print("Errore nel caricamento delle note:", e)
+
+    carica_note()
+
 
     def salva_file():
         partecipanti_df = pd.DataFrame([p["var_nome"].get() for p in partecipanti], columns=["Nome"])
@@ -65,6 +79,12 @@ def avvia_tool(callback_torna_indietro, centra_finestra, all_players):
                 if not df_squadra.empty:
                     df_squadra.to_excel(writer, sheet_name=nome, index=False)
 
+            
+            if note_per_id:
+                df_note = pd.DataFrame([{"Id": k, "Nota": v} for k, v in note_per_id.items()])
+                df_note.to_excel(writer, sheet_name="Note", index=False)
+
+
 
     def aggiorna_tabella_squadra():
         for item in tree_squadra.get_children():
@@ -72,16 +92,23 @@ def avvia_tool(callback_torna_indietro, centra_finestra, all_players):
         p = partecipante_selezionato.get()
         if p in squadre:
             for giocatore in squadre[p]:
-                tree_squadra.insert("", "end", values=(giocatore["Nome"], giocatore["R"], giocatore["Squadra"], giocatore["Crediti"]))
-                # Calcolo crediti residui
+                tree_squadra.insert("", "end", values=(
+    giocatore["Nome"],
+    giocatore["R"],
+    giocatore["Squadra"],
+    giocatore["Crediti"],
+    note_per_id.get(giocatore.get("Id", ""), "")
+))
+
+                
         totale_speso = sum(g.get("Crediti", 0) for g in squadre[p])
         try:
             budget = int(budget_var.get())
         except ValueError:
-            budget = 1000  # default di sicurezza
+            budget = 1000  
         residui = budget - totale_speso
         label_crediti_residui.config(text=f"Crediti residui: {residui}")
-                # Somma dei crediti per ruolo
+                
         crediti_ruolo = {"P": 0, "D": 0, "C": 0, "A": 0}
         for g in squadre[p]:
             ruolo = g.get("R", "")
@@ -95,6 +122,46 @@ def avvia_tool(callback_torna_indietro, centra_finestra, all_players):
             else:
                 percentuale = 0
             label.config(text=f"{ruolo}: {percentuale:.1f}%")
+
+    def apri_popup_nota():
+        selected = tree_squadra.selection()
+        if not selected:
+            return
+        item = tree_squadra.item(selected[0])
+        values = item["values"]
+        nome_giocatore = values[0]
+        partecipante = partecipante_selezionato.get()
+
+        if not partecipante or partecipante not in squadre:
+            return
+
+        
+        giocatore = next((g for g in squadre[partecipante] if g["Nome"] == nome_giocatore), None)
+        if not giocatore or "Id" not in giocatore:
+            print(f"Giocatore '{nome_giocatore}' senza Id.")
+            return
+
+        id_giocatore = giocatore["Id"]
+        nota_attuale = note_per_id.get(id_giocatore, "")
+
+        popup = tk.Toplevel(root)
+        popup.title(f"Nota per {nome_giocatore}")
+        centra_finestra(popup, 400, 300)
+
+        tk.Label(popup, text=f"Nota per {nome_giocatore}", font=("Arial", 12, "bold")).pack(pady=10)
+
+        text_area = tk.Text(popup, wrap="word", height=10)
+        text_area.pack(padx=10, pady=10, fill="both", expand=True)
+        text_area.insert("1.0", nota_attuale)
+
+        def salva_nota():
+            nuova_nota = text_area.get("1.0", "end").strip()
+            note_per_id[id_giocatore] = nuova_nota
+            salva_file()
+            popup.destroy()
+            aggiorna_tabella_squadra()
+
+        tk.Button(popup, text="Salva", command=salva_nota).pack(pady=10)
 
 
 
@@ -135,6 +202,7 @@ def avvia_tool(callback_torna_indietro, centra_finestra, all_players):
             return
 
         gioc_dict = {
+            "Id": giocatore_trovato["Id"],
             "Nome": giocatore_trovato["Nome"],
             "R": giocatore_trovato["R"],
             "Squadra": giocatore_trovato["Squadra"],
@@ -229,7 +297,7 @@ def avvia_tool(callback_torna_indietro, centra_finestra, all_players):
 
         tk.Button(popup_impostazioni, text="Salva", command=salva_impostazioni).pack(pady=10)
 
-    # Layout
+    
     top_frame = tk.Frame(root)
     top_frame.pack(fill="x", padx=10, pady=10)
 
@@ -263,11 +331,13 @@ def avvia_tool(callback_torna_indietro, centra_finestra, all_players):
     frame_tabella = tk.Frame(root)
     frame_tabella.pack(fill="both", expand=True, padx=10, pady=10)
 
-    tree_squadra = ttk.Treeview(frame_tabella, columns=("Nome", "Ruolo", "Squadra", "Crediti"), show="headings")
-    for col in ("Nome", "Ruolo", "Squadra", "Crediti"):
+    tree_squadra = ttk.Treeview(frame_tabella, columns=("Nome", "Ruolo", "Squadra", "Crediti", "Nota"), show="headings")
+    for col in ("Nome", "Ruolo", "Squadra", "Crediti", "Nota"):
+
         tree_squadra.heading(col, text=col)
         tree_squadra.column(col, width=150, anchor="center")
     tree_squadra.pack(fill="both", expand=True)
+    tree_squadra.bind("<Return>", lambda event: apri_popup_nota())
 
     label_portieri = tk.Label(root, text="P: ", font=("Arial", 12, "bold"))
     label_portieri.pack(side="left", pady=5, padx=20)
@@ -288,9 +358,9 @@ def avvia_tool(callback_torna_indietro, centra_finestra, all_players):
     btn_torna_menu = tk.Button(root, text="⬅️ Torna al Menu", command=lambda: [salva_file(), root.destroy(), callback_torna_indietro()])
     btn_torna_menu.pack(pady=20)
 
-    # Avvio iniziale
+    
     carica_file()
-    # Imposta iniziale partecipanti
+    
     partecipanti_nomi, squadre = carica_file()
 
     partecipanti = []
@@ -303,7 +373,7 @@ def avvia_tool(callback_torna_indietro, centra_finestra, all_players):
     aggiorna_dropdown()
     aggiorna_tabella_squadra()
 
-    # Visualizza i nomi dei partecipanti nei campi di input e nei pulsanti 👀
+    
     for p in partecipanti:
         frame = tk.Frame(frame_partecipanti)
         frame.pack(side="left", padx=5)
